@@ -13,8 +13,11 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras import layers, losses
 from tensorflow.keras.models import Model
 from tensorflow.python.keras.models import Sequential
+from tensorflow.keras.utils import to_categorical
 
+from auto_conv1d_encoder import Autoencoder_Conv1D
 from autoe import Autoencoder
+from plotting import plotting_history_1, customize_axis_plotting
 
 
 def get_data(base_dir):
@@ -34,13 +37,13 @@ def get_data(base_dir):
     return train_data, train_labels, test_data, test_labels
 
 
-def normalize_data(data):
+def normalize_data(data,dim=2):
     """
 
     :param data: numpy array with the data
     :return: normalize data to 0..1
     """
-    for i in range(data.shape[2]):
+    for i in range(data.shape[dim]):
         # normalize the data over the channels
         data[:, :, i] = MinMaxScaler().fit_transform(data[:, :, i])
     return data
@@ -61,32 +64,36 @@ if __name__ == '__main__':
     # ******************************* feature extraction ***************************************************************
     # ******************************************************************************************************************
 
-    latent_dim = 64
+    latent_dim = 10
     features = np.zeros(shape=(len(norm_train_data), train_Y.shape[0], latent_dim))
     for k, data in enumerate(norm_train_data):
-        autoencoder = Autoencoder(latent_dim, data.shape[1])
-        autoencoder.compile(metrics=['accuracy'], optimizer='adam', loss=losses.MeanSquaredError())
+        autoencoder = Autoencoder_Conv1D(norm_train_data[k].shape, latent_dim)
+        autoencoder.compile(metrics=['accuracy'], optimizer=tf.keras.optimizers.Adam(lr=0.0005),
+                            loss=losses.MeanSquaredError())
         history = autoencoder.fit(data, data,
-                                  epochs=30,
+                                  epochs=40,
                                   shuffle=True,
+                                  batch_size=48,
+                                  # validation_split=0.2,
                                   # validation_data=(x_test, x_test),
-                                  verbose=0)
-        plt.plot(history.history["loss"], label="Training Loss")
-        plt.legend()
-        plt.savefig("train_{}.png".format(k + 1))
-
+                                  verbose=1)
+        plotting_history_1(history.history,
+                           str(norm_train_data[k].shape[1]) + "_autoencoder_{}_.png".format(k + 1),
+                           f=customize_axis_plotting("loss"))
         print(autoencoder.encoder(data).shape)
         features[k] = autoencoder.encoder(data)
 
-    print(features.shape)
-    print(features)
-    print(np.unique(train_Y))
     num_classes = np.unique(train_Y).shape[0]
-    features = features.reshape((-1, 9 * 64))
+    print(features.shape)
+    features = features.reshape((-1, latent_dim, 9))
+    print(features.shape)
 
     model = Sequential()
-    model.add(Dense(350, input_shape=features.shape, activation='relu'))
-    model.add(Dense(50, activation='relu'))
+    model.add(layers.Conv1D(kernel_size=3, filters=32, activation='relu'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.Conv1D(kernel_size=3, filters=64, activation='relu'))
+    model.add(layers.BatchNormalization())
+    model.add(layers.GlobalAveragePooling1D())
     model.add(Dense(num_classes, activation='softmax'))
 
     ## features = features.reshape((-1, 9, 64))
@@ -103,19 +110,24 @@ if __name__ == '__main__':
     ## output = Dense(1, activation='sigmoid')(x)
     ##
     ## model = Model(vgg16.input, output)
-    model.summary()
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.01),
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.001),
                   loss='categorical_crossentropy',
                   metrics=['accuracy'])
 
+    features = normalize_data(features)
+    print(np.max(features))
     history = model.fit(x=features,
-                        y=train_Y,
-                        batch_size=32,
-                        epochs=40,
+                        y=to_categorical(train_Y),
+                        batch_size=16,
+                        epochs=200,
                         verbose=1,
                         validation_split=0.2)
 
+    model.summary()
+    plotting_history_1(history.history,
+                       "final_classifier.png",
+                       f=customize_axis_plotting("loss"))
     ## class Feature_NN(Model):
     ##     def __init__(self, input_size):
     ##         self.input_shape = input_size
