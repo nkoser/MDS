@@ -3,6 +3,7 @@ from math import cos, sin
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy import math
 from scipy import signal
 from utils import savitzky_golay
 
@@ -23,7 +24,7 @@ def calc_R(g_B_s):
 
 
 # Load phone data into a Dataframe
-df = pd.read_csv('static/phone_data.csv')
+df = pd.read_csv('static/data_circle.csv')
 df = df.iloc[:, :-1]
 
 # Plot the measured accelerometer
@@ -71,14 +72,14 @@ for t in range(1, len(df)):
 #          for t, angle in enumerate(angles, start=0)]
 print((df['time'].loc[1] - df['time'].loc[0]))
 print(angles[0])
-tmp = [angles[0][2] * df['time'].loc[0]]
+tmp = [angles[0][-1] * df['time'].loc[0]]
 for t in range(1, len(angles)):
     # t1 -> Oz_1 * (t1-t0)
     # t2 -> Oz_1 * (t1-t0) + Oz_2 * (t2-t1)
     # t3 -> t1 + t2 + Oz_2 * (t3-t2)
     # .
     # t_540
-    tmp.append(tmp[t - 1] + (angles[t][2] * (df['time'].loc[t] - df['time'].loc[t - 1])))
+    tmp.append(tmp[t - 1] + (angles[t][-1] * (df['time'].loc[t] - df['time'].loc[t - 1])))
 
 angles = tmp
 
@@ -88,6 +89,7 @@ lambda_t = 75
 
 x_t = []
 y_t = []
+# angles = [math.degrees(x) for x in angles]
 
 for i in range(len(angles)):
     if i == 0:
@@ -97,5 +99,7 @@ for i in range(len(angles)):
         x_t.append(x_t[i - 1] + (lambda_t * cos(angles[i])))
         y_t.append(y_t[i - 1] + (lambda_t * sin(angles[i])))
 plt.figure()
-plt.plot(x_t, y_t)
+plt.scatter(x_t,y_t)
+for (x, y) in zip(x_t, y_t):
+    print("X: {}, Y: {}".format(x, y))
 plt.savefig("Hallo.png")
