@@ -127,3 +127,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+/Scenario_2/Track.png
+/Scenario_2/test.png
+/Scenario_2/norm_acc.png
+/Scenario_2/norm_acc_sg.png
+/Scenario_2/Hallo.png
+/Scenario_2/gyros.png
+/Scenario_2/accelerometer.png
