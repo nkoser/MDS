@@ -25,7 +25,7 @@ def calc_R(g_B_s):
 
 
 # Load phone data into a Dataframe
-df = pd.read_csv('static/data_circle.csv')
+df = pd.read_csv('/content/MDS/Scenario_2/static/data_circle.csv')
 df = df.iloc[:, :-1]
 
 # Plot the measured accelerometer
