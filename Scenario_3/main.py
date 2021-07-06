@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 import tensorflow as tf
-from keras.layers import BatchNormalization, Activation, MaxPooling1D
 
 from sklearn.preprocessing import MinMaxScaler
 
@@ -16,7 +15,7 @@ from tensorflow.python.keras.utils.np_utils import to_categorical
 def data_augmentation(train, label):
     temp_noise_list = []
     labels = []
-    for std in [0.05]:
+    for std in [0.05, 0.2, 0.5, 0.6]:
         noise = np.random.normal(0, std, train.shape)
         temp_noise_list.append(train + noise)
         labels.append(label)
@@ -71,7 +70,7 @@ def get_model(num_sensors=1):
     return model
 
 
-def load_data(root_dir="/Users/niklaskoser/Documents/MDS/Scenario_3"):
+def load_data(root_dir="static/patientdata"):
     """
     Build a dictionary of dataframes. So we get:
     {patient_name : {sensor_name: }}
@@ -94,13 +93,13 @@ def get_training_data(patients: list, sensor='O1M2_10HZ.csv'):
     train = []
     labels = []
     for k, patient in enumerate(patients):
-        scaler = MinMaxScaler()
         temp = slice_per(data[patient][sensor].iloc[:, 0].values, 300)
         temp.pop(-1)
         train.append(temp)
         lbl = data[patient]['SleepStaging.csv']['Schlafstadium'].values[:-1]
         look_up, p_labels = np.unique(lbl, return_inverse=True)
         labels.append(p_labels)
+    scaler = MinMaxScaler()
     res = [scaler.fit_transform(np.asarray(d)) for d in train]
     res = np.concatenate(res, axis=0)
     labels = np.concatenate(labels)
