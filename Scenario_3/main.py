@@ -3,13 +3,24 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 import tensorflow as tf
-
+from keras.layers import BatchNormalization, Activation, MaxPooling1D
 
 from sklearn.preprocessing import MinMaxScaler
+
 from sklearn.utils import class_weight
-from tensorflow.python.keras.layers import Conv1D, MaxPool1D, Dense, Flatten
+from tensorflow.python.keras.layers import Conv1D, MaxPool1D, Dense, Flatten, Dropout
 from tensorflow.python.keras.models import Sequential
 from tensorflow.python.keras.utils.np_utils import to_categorical
+
+
+def data_augmentation(train, label):
+    temp_noise_list = []
+    labels = []
+    for std in [0.05]:
+        noise = np.random.normal(0, std, train.shape)
+        temp_noise_list.append(train + noise)
+        labels.append(label)
+    return np.vstack(temp_noise_list), np.hstack(labels)
 
 
 def plot_data(name="Overview", patient="A", sensor="O1M2_10HZ.csv"):
@@ -31,17 +42,31 @@ def get_model(num_sensors=1):
     :param num_sensors:
     :return:
     """
-    model = Sequential()
+    """model = Sequential()
     model.add(Conv1D(3, 3))
     model.add(Conv1D(16, 3))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
     model.add(MaxPool1D(2))
-    model.add(Conv1D(32, 3))
+    model.add(Conv1D(32, 3, activation='relu'))
+    #model.add(BatchNormalization())
     model.add(MaxPool1D(2))
-    model.add(Conv1D(64, 3))
+    model.add(Conv1D(64, 3, activation='relu'))
+    #model.add(BatchNormalization())
     model.add(MaxPool1D(2))
-    model.add(Conv1D(128, 3))
+    model.add(Conv1D(128, 3, activation='relu'))
     model.add(Flatten())
     model.add(Dense(64, activation='relu'))
+    model.add(Dense(5, activation='softmax'))
+    return model"""
+
+    model = Sequential()
+    model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
+    model.add(Conv1D(filters=64, kernel_size=3, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(MaxPool1D(pool_size=2))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
     model.add(Dense(5, activation='softmax'))
     return model
 
@@ -88,6 +113,12 @@ data, patients, file_names = load_data()
 # loading labels and convert them to numbers
 decode_dict = {'N1': 0, 'N2': 1, 'N3': 2, 'REM': 3, "WK": 4}
 training_data, t_labels = get_training_data(patients)
+print(training_data.shape)
+print(t_labels.shape)
+
+training_data, t_labels = data_augmentation(training_data, t_labels)
+print(training_data.shape)
+print(t_labels.shape)
 
 # Compute Class weights
 class_weights = class_weight.compute_class_weight('balanced',
@@ -97,14 +128,14 @@ class_weights = dict(enumerate(np.array(class_weights)))
 
 # Get a sequential model for using one channel
 model = get_model(num_sensors=1)
-model.compile(optimizer='adam',
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.0001),
               loss='categorical_crossentropy',
               metrics=['accuracy',
                        tf.keras.metrics.AUC(name="AUROC", curve='ROC')])
 training_data = np.expand_dims(training_data, -1)
 model.fit(x=training_data,
           y=to_categorical(t_labels),
-          batch_size=32,
+          batch_size=64,
           epochs=30,
           validation_split=0.2,
           verbose=1,
