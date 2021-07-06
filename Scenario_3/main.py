@@ -69,7 +69,6 @@ def get_model(num_sensors=1):
     model.add(Dense(5, activation='softmax'))
     return model
 
-    # hallo :)
 
 
 def load_data(root_dir="static/patientdata"):
