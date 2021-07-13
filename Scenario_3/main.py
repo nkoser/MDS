@@ -10,7 +10,8 @@ from sklearn.utils import class_weight
 from tensorflow.python.keras.layers import Conv1D, MaxPool1D, Dense, Flatten, Dropout, Conv2D,MaxPool2D
 from tensorflow.python.keras.models import Sequential
 from tensorflow.python.keras.utils.np_utils import to_categorical
-
+import keract
+#from vis.visualization import visualize_saliency
 
 def data_augmentation(train, label):
     temp_noise_list = []
@@ -60,7 +61,7 @@ def get_model(num_sensors=1):
     return model"""
 
     model = Sequential()
-    model.add(Conv2D(filters=64, kernel_size=3, activation='relu',padding='SAME'))
+    model.add(Conv2D(filters=64, kernel_size=3, activation='relu',padding='SAME',name="conv_1"))
     #model.add(Conv2D(filters=64, kernel_size=3, activation='relu'))
     model.add(Dropout(0.5))
     #model.add(MaxPool2D(pool_size=2))
@@ -151,3 +152,7 @@ model.fit(x=training_data,
           validation_split=0.2,
           verbose=1,
           class_weight=class_weights)
+
+image = training_data[0,:,:,0]
+activations = keract.get_activations(model,image,layer_names="conv_1")
+out=keract.display_heatmaps(activations,image,save=True)
