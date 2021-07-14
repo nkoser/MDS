@@ -3,15 +3,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 import tensorflow as tf
-
+import cv2
+import keract
 from sklearn.preprocessing import MinMaxScaler
+import tensorflow.keras.backend as K
 
 from sklearn.utils import class_weight
-from tensorflow.python.keras.layers import Conv1D, MaxPool1D, Dense, Flatten, Dropout, Conv2D,MaxPool2D
-from tensorflow.python.keras.models import Sequential
+from tensorflow.keras.layers import Conv1D, MaxPool1D, Dense, Flatten, Dropout, Conv2D, MaxPool2D
+from tensorflow.keras.models import Sequential
+from tensorflow.python.keras import Model
+from tensorflow.python.keras.layers import GlobalAveragePooling2D, Activation
 from tensorflow.python.keras.utils.np_utils import to_categorical
-import keract
-#from vis.visualization import visualize_saliency
+
+# from vis.visualization import visualize_saliency
+from tensorflow.python.layers.pooling import MaxPooling2D
+
 
 def data_augmentation(train, label):
     temp_noise_list = []
@@ -36,9 +42,10 @@ def slice_per(source, step):
     return slices
 
 
-def get_model(num_sensors=1):
+def get_model(num_sensors=1, input_shape=None):
     """
     Build a sequential model
+    :param input_shape:
     :param num_sensors:
     :return:
     """
@@ -60,16 +67,26 @@ def get_model(num_sensors=1):
     model.add(Dense(5, activation='softmax'))
     return model"""
 
-    model = Sequential()
-    model.add(Conv2D(filters=64, kernel_size=3, activation='relu',padding='SAME',name="conv_1"))
-    #model.add(Conv2D(filters=64, kernel_size=3, activation='relu'))
-    model.add(Dropout(0.5))
-    #model.add(MaxPool2D(pool_size=2))
-    model.add(Flatten())
-    model.add(Dense(100, activation='relu'))
-    model.add(Dense(5, activation='softmax'))
-    return model
+    model = tf.keras.Sequential()
 
+    model.add(Conv2D(64, (1, 3)))
+    model.add(Activation("relu"))
+    model.add(MaxPool2D(strides=1, pool_size=(1, 2)))
+
+    model.add(Conv2D(64, (1, 3), ))
+    model.add(Activation("relu"))
+    model.add(MaxPool2D(strides=1, pool_size=(1, 2), name="last_conv"))
+
+    model.add(GlobalAveragePooling2D())
+    model.add(Dense(64))
+    model.add(Activation('relu'))
+    model.add(Dense(5, activation='softmax'))
+    # model = Sequential()
+    # model.add(Conv2D(64, kernel_size=(1, 3), activation='relu'))
+    # model.add(Conv2D(32, kernel_size=(1, 3), activation='relu', name="last_conv"))
+    # model.add(GlobalAveragePooling2D())
+    # model.add(Dense(5, activation='softmax'))
+    return model
 
 
 def load_data(root_dir="static/patientdata"):
@@ -92,8 +109,8 @@ def load_data(root_dir="static/patientdata"):
 
 
 def get_training_data(patients: list, sensors=["O1M2_10HZ.csv"]):
-    sensors=sensors[sensors !='SleepStaging.csv']
-    train=[]
+    sensors = sensors[sensors != 'SleepStaging.csv']
+    train = []
     for sensor in sensors:
         train_temp = []
         labels = []
@@ -110,10 +127,7 @@ def get_training_data(patients: list, sensors=["O1M2_10HZ.csv"]):
         labels = np.concatenate(labels)
         train.append(res)
 
-        print(res.shape)
-       
-
-    return np.expand_dims(np.stack(train,1),-1), labels
+    return np.expand_dims(np.stack(train, 1), -1), labels
 
 
 # loading data into a dataframe
@@ -121,16 +135,11 @@ data, patients, file_names = load_data()
 
 # loading labels and convert them to numbers
 decode_dict = {'N1': 0, 'N2': 1, 'N3': 2, 'REM': 3, "WK": 4}
-print(file_names)
-training_data, t_labels = get_training_data(patients,sensors= np.unique(np.array(file_names)))
-print(training_data.shape)
-print(t_labels.shape)
+training_data, t_labels = get_training_data(patients, sensors=np.unique(np.array(file_names)))
 
-plt.imsave("test.png",training_data[0,:,:,0],)
+plt.imsave("test.png", training_data[0, :, :, 0], )
 
 training_data, t_labels = data_augmentation(training_data, t_labels)
-print(training_data.shape)
-print(t_labels.shape)
 
 # Compute Class weights
 class_weights = class_weight.compute_class_weight('balanced',
@@ -139,20 +148,59 @@ class_weights = class_weight.compute_class_weight('balanced',
 class_weights = dict(enumerate(np.array(class_weights)))
 
 # Get a sequential model for using one channel
-model = get_model(num_sensors=1)
+model = get_model(num_sensors=1, input_shape=(11, 300, 1))
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.001),
               loss='categorical_crossentropy',
               metrics=['accuracy',
                        tf.keras.metrics.AUC(name="AUROC", curve='ROC')])
-training_data = np.expand_dims(training_data, -1)
+# training_data = np.expand_dims(training_data, -1)
 model.fit(x=training_data,
           y=to_categorical(t_labels),
-          batch_size=64,
-          epochs=30,
+          batch_size=32,
+          epochs=20,
           validation_split=0.2,
           verbose=1,
           class_weight=class_weights)
 
-image = training_data[0,:,:,0]
-activations = keract.get_activations(model,image,layer_names="conv_1")
-out=keract.display_heatmaps(activations,image,save=True)
+
+def get_output_layer(model, layer_name):
+    # get the symbolic outputs of each "key" layer (we gave them unique names).
+    layer_dict = dict([(layer.name, layer) for layer in model.layers])
+    layer = layer_dict[layer_name]
+    return layer
+
+
+def visualize_class_activation_map(output_name, target_class):
+    original_img = np.expand_dims(training_data[1, :, :, 0], -1)
+    width, height, _ = original_img.shape
+
+    # Reshape to the network input shape (3, w, h).
+    img = np.array([np.transpose(np.float32(original_img), (0, 1, 2))])
+
+    # Get the 512 input weights to the softmax.
+    class_weights = model.layers[-1].get_weights()[0]
+    final_conv_layer = get_output_layer(model, "last_conv")
+    get_output = K.function([model.layers[0].input], [final_conv_layer.output, model.layers[-1].output])
+    [conv_outputs, _] = get_output([img])
+    conv_outputs = conv_outputs[0, :, :, :]
+
+    # Create the class activation map.
+    cam = np.zeros(dtype=np.float32, shape=conv_outputs.shape[0:2])
+    for i, w in enumerate(class_weights[:, target_class]):
+        cam += w * conv_outputs[:, :, i]
+    cam /= np.max(cam)
+    cam = cv2.resize(cam, (height, width))
+    heatmap = cv2.applyColorMap(np.uint8(255 * cam), cv2.COLORMAP_JET)
+    heatmap[np.where(cam < 0.2)] = 0
+    img = heatmap * 0.5 + original_img
+    cv2.imwrite(output_name, img)
+
+
+for target_class in range(5):
+    visualize_class_activation_map("heatmap_class_{}.png".format(target_class), target_class)
+
+print(decode_dict)
+print(np.unique(np.array(file_names)))
+# activations = keract.get_activations(model, np.expand_dims(np.expand_dims(image, -1), 0))
+# print("Hi")
+# out = keract.display_heatmaps(activations, np.expand_dims(image, -1), save=True, directory='activation')
