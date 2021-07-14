@@ -5,6 +5,8 @@ import os
 import tensorflow as tf
 import cv2
 import keract
+from sklearn.metrics import classification_report
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 import tensorflow.keras.backend as K
 
@@ -17,6 +19,9 @@ from tensorflow.python.keras.utils.np_utils import to_categorical
 
 # from vis.visualization import visualize_saliency
 from tensorflow.python.layers.pooling import MaxPooling2D
+
+from Scenario_1.meanAveragePrecision import computeMeanAveragePrecision
+from Scenario_3.plotting import plotting_history_1, customize_axis_plotting
 
 
 def data_augmentation(train, label):
@@ -69,11 +74,19 @@ def get_model(num_sensors=1, input_shape=None):
 
     model = tf.keras.Sequential()
 
-    model.add(Conv2D(64, (1, 3)))
+    model.add(Conv2D(32, (1, 3)))
     model.add(Activation("relu"))
     model.add(MaxPool2D(strides=1, pool_size=(1, 2)))
 
     model.add(Conv2D(64, (1, 3), ))
+    model.add(Activation("relu"))
+    model.add(MaxPool2D(strides=1, pool_size=(1, 2), ))
+
+    model.add(Conv2D(64, (1, 3), ))
+    model.add(Activation("relu"))
+    model.add(MaxPool2D(strides=1, pool_size=(1, 2), ))
+
+    model.add(Conv2D(128, (1, 3), ))
     model.add(Activation("relu"))
     model.add(MaxPool2D(strides=1, pool_size=(1, 2), name="last_conv"))
 
@@ -136,15 +149,15 @@ data, patients, file_names = load_data()
 # loading labels and convert them to numbers
 decode_dict = {'N1': 0, 'N2': 1, 'N3': 2, 'REM': 3, "WK": 4}
 training_data, t_labels = get_training_data(patients, sensors=np.unique(np.array(file_names)))
-
+X_train, X_test, y_train, y_test = train_test_split(training_data, t_labels, test_size=0.2, random_state=1)
 plt.imsave("test.png", training_data[0, :, :, 0], )
 
 training_data, t_labels = data_augmentation(training_data, t_labels)
 
 # Compute Class weights
 class_weights = class_weight.compute_class_weight('balanced',
-                                                  np.unique(t_labels),
-                                                  t_labels)
+                                                  np.unique(y_train),
+                                                  y_train)
 class_weights = dict(enumerate(np.array(class_weights)))
 
 # Get a sequential model for using one channel
@@ -154,13 +167,17 @@ model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.001),
               metrics=['accuracy',
                        tf.keras.metrics.AUC(name="AUROC", curve='ROC')])
 # training_data = np.expand_dims(training_data, -1)
-model.fit(x=training_data,
-          y=to_categorical(t_labels),
-          batch_size=32,
-          epochs=20,
-          validation_split=0.2,
-          verbose=1,
-          class_weight=class_weights)
+history = model.fit(x=X_train,
+                    y=to_categorical(y_train),
+                    batch_size=32,
+                    epochs=80,
+                    validation_split=0.2,
+                    verbose=1,
+                    class_weight=class_weights)
+
+plotting_history_1(history.history,
+                   "final_classifier.png",
+                   f=customize_axis_plotting("loss"))
 
 
 def get_output_layer(model, layer_name):
@@ -196,11 +213,22 @@ def visualize_class_activation_map(output_name, target_class):
     cv2.imwrite(output_name, img)
 
 
+# Evaluation
+
 for target_class in range(5):
     visualize_class_activation_map("heatmap_class_{}.png".format(target_class), target_class)
 
 print(decode_dict)
 print(np.unique(np.array(file_names)))
+
+
+predictions = model.predict_classes(X_test, verbose=1)
+
+report = classification_report(y_test, predictions, output_dict=True)
+df = pd.DataFrame(report).transpose()
+p = computeMeanAveragePrecision(y_test, model.predict(X_test))
+df["Mean_average_percision"] = np.concatenate([p[1], np.array([-1, -1, p[0]])])
+df.to_csv("results.csv")
 # activations = keract.get_activations(model, np.expand_dims(np.expand_dims(image, -1), 0))
 # print("Hi")
 # out = keract.display_heatmaps(activations, np.expand_dims(image, -1), save=True, directory='activation')
