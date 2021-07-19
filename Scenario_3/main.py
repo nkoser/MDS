@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import tensorflow as tf
 import cv2
-import keract
+
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
@@ -20,8 +20,8 @@ from tensorflow.python.keras.utils.np_utils import to_categorical
 # from vis.visualization import visualize_saliency
 from tensorflow.python.layers.pooling import MaxPooling2D
 
-from Scenario_1.meanAveragePrecision import computeMeanAveragePrecision
-from Scenario_3.plotting import plotting_history_1, customize_axis_plotting
+from meanAveragePrecision import computeMeanAveragePrecision
+from plotting import plotting_history_1, customize_axis_plotting
 
 
 def data_augmentation(train, label):
@@ -74,7 +74,7 @@ def get_model(num_sensors=1, input_shape=None):
 
     model = tf.keras.Sequential()
 
-    model.add(Conv2D(32, (1, 3)))
+    model.add(Conv2D(32, (1, 3),input_shape=input_shape))
     model.add(Activation("relu"))
     model.add(MaxPool2D(strides=1, pool_size=(1, 2)))
 
@@ -153,6 +153,7 @@ X_train, X_test, y_train, y_test = train_test_split(training_data, t_labels, tes
 plt.imsave("test.png", training_data[0, :, :, 0], )
 
 training_data, t_labels = data_augmentation(training_data, t_labels)
+print("Labels: {}".format(t_labels[1]))
 
 # Compute Class weights
 class_weights = class_weight.compute_class_weight('balanced',
@@ -162,6 +163,10 @@ class_weights = dict(enumerate(np.array(class_weights)))
 
 # Get a sequential model for using one channel
 model = get_model(num_sensors=1, input_shape=(11, 300, 1))
+#model=model.build()
+model.summary()
+
+
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=0.001),
               loss='categorical_crossentropy',
               metrics=['accuracy',
